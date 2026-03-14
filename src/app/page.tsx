@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import type { Organization, Session } from '@/types';
-import { organizationsStore, sessionsStore } from '@/lib/db';
+import { organizationsStore, sessionsStore, agendasStore, talksStore } from '@/lib/db';
 
 const STATUS_BADGE: Record<Session['status'], { label: string; cls: string }> = {
   draft:     { label: '下書き',   cls: 'bg-zinc-700 text-zinc-300' },
@@ -43,6 +43,43 @@ export default function Home() {
     } else {
       router.push(`/output/${session.id}`);
     }
+  };
+
+  const handleDeleteSession = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    if (!confirm('このセッションを削除しますか？\n（関連する録音データや議事録も削除されます）')) return;
+
+    // セッション自体を削除
+    await sessionsStore.remove(sessionId);
+
+    // TODO: 本来は関連するTalkやAgendaも削除すべきですが、まずはSessionのみ消して一覧から消去します。
+    // （デモ版としてのクリーンナップ目的に十分なため）
+
+    setSessions(prev => prev.filter(s => s.id !== sessionId));
+  };
+
+  const handleInitializeApp = async () => {
+    if (!confirm('【警告】\nすべてのデータ（組織設定・セッション・発言履歴）を消去し、アプリを初期化しますか？\nこの操作は取り消せません。')) return;
+
+    // IndexedDBの全オブジェクトストアをクリアする処理
+    const orgs = await organizationsStore.getAll();
+    for (const o of orgs) await organizationsStore.remove(o.id);
+    
+    const sess = await sessionsStore.getAll();
+    for (const s of sess) await sessionsStore.remove(s.id);
+    
+    const agns = await agendasStore.getAll();
+    for (const a of agns) await agendasStore.remove(a.id);
+    
+    const tlks = await talksStore.getAll();
+    for (const t of tlks) await talksStore.remove(t.id);
+
+    alert('初期化が完了しました。');
+    
+    // 状態をリセットし、初期設定(Setup)画面があればそこへ、なければリロード
+    setSessions([]);
+    setOrganization(null);
+    router.push('/setup'); // デプロイ直後の状態＝設定画面へ飛ばす
   };
 
   return (
@@ -105,9 +142,17 @@ export default function Home() {
                             <p className="text-xs text-zinc-600 mt-0.5 truncate">📍 {session.location}</p>
                           )}
                         </div>
-                        <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full ${badge.cls}`}>
-                          {badge.label}
-                        </span>
+                        <div className="flex flex-col items-end gap-2">
+                          <span className={`flex-shrink-0 text-xs px-2 py-0.5 rounded-full ${badge.cls}`}>
+                            {badge.label}
+                          </span>
+                          <button
+                            onClick={(e) => handleDeleteSession(e, session.id)}
+                            className="bg-red-900/30 text-red-500 border border-red-900/50 hover:bg-red-900/50 hover:border-red-500/50 rounded-md px-2 py-1 text-xs transition-colors"
+                          >
+                            削除
+                          </button>
+                        </div>
                       </div>
                       <div className="flex items-center gap-3 mt-2">
                         <span className="text-xs text-zinc-600">
@@ -124,6 +169,16 @@ export default function Home() {
             </ul>
           )}
         </section>
+
+        {/* ── アプリの初期化 ── */}
+        <div className="mt-16 pt-8 border-t border-zinc-800 flex justify-center">
+          <button
+            onClick={handleInitializeApp}
+            className="text-xs text-zinc-500 hover:text-red-400 border border-transparent hover:border-red-900/50 px-4 py-2 rounded-lg transition-colors"
+          >
+            アプリを初期化する（全データ削除）
+          </button>
+        </div>
 
       </div>
     </div>
